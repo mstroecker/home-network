@@ -37,6 +37,7 @@ service integrated-vtysh-config
 router bgp 65010
  no bgp ebgp-requires-policy
  neighbor enP3p49s0 interface remote-as 65001
+ neighbor enP3p49s0 bfd
  !
  address-family ipv4 unicast
   neighbor enP3p49s0 activate
@@ -91,8 +92,12 @@ On the switch:
 /ip route print where bgp
 ```
 
-## Known Issues
+## BFD
 
-### BFD Does Not Work
+BFD is enabled on the BGP template (`use-bfd=yes`). The FRR config must also enable BFD:
 
-RouterOS does not create BFD sessions over IPv6 link-local with FRR peers. When `use-bfd=yes` is set on the BGP template, the switch never establishes a BFD session, which causes BGP to flap every ~10 seconds. BFD is disabled in the template until this is resolved.
+```
+neighbor <interface> bfd
+```
+
+Both sides must have BFD enabled for sessions to establish. Without `neighbor <iface> bfd` on the FRR side, the switch sends BFD packets but never receives replies, and BGP flaps.

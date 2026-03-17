@@ -87,7 +87,7 @@ Key syntax notes for RouterOS 7.22:
 
 ### BFD (Bidirectional Forwarding Detection)
 
-BFD is currently **disabled** on the BGP template (`use-bfd=no`). RouterOS BFD over IPv6 link-local does not establish sessions with FRR peers -- the switch never creates a BFD session, causing BGP to flap every ~10 seconds when `use-bfd=yes` is set. BFD configuration is kept in bgp.rsc (1s timers, multiplier 3) for future use once the issue is resolved.
+BFD is **enabled** on the BGP template (`use-bfd=yes`) with 1s timers and multiplier 3 (3s detection time). Both sides must have BFD enabled — on RouterOS via the template, and on FRR via `neighbor <iface> bfd` in the BGP config.
 
 ### Peer Connections
 

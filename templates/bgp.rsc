@@ -6,8 +6,7 @@
 
 # --- BGP template ---
 # afi=ip,ipv6: IPv4 routes via Extended Next Hop (ENHE), IPv6 native
-# BFD disabled: RouterOS BFD over link-local doesn't establish with FRR (known issue)
-/routing bgp template add name=ebgp-default as=${AS} afi=ip,ipv6 use-bfd=no
+/routing bgp template add name=ebgp-default as=${AS} afi=ip,ipv6 use-bfd=yes
 
 # --- BFD (disabled — kept for future use) ---
 /routing bfd configuration add disabled=no min-rx=1s min-tx=1s multiplier=3
