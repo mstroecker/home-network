@@ -61,6 +61,18 @@
 # MUST be after VLAN table + interfaces are populated to avoid lockout
 /interface bridge set bridge vlan-filtering=yes
 
+# --- IPv6 ND prefixes for unnumbered BGP ---
+# Each peering VLAN needs an ND prefix so the switch sends Router Advertisements,
+# enabling peers to auto-discover the switch's link-local address (RFC 4861).
+/ipv6 nd prefix add prefix=none interface=vlan101
+/ipv6 nd prefix add prefix=none interface=vlan102
+/ipv6 nd prefix add prefix=none interface=vlan103
+/ipv6 nd prefix add prefix=none interface=vlan104
+/ipv6 nd prefix add prefix=none interface=vlan105
+/ipv6 nd prefix add prefix=none interface=vlan106
+/ipv6 nd prefix add prefix=none interface=vlan107
+/ipv6 nd prefix add prefix=none interface=vlan108
+
 # --- Management IP on vlan1 (not on bridge — see architecture.md) ---
 /ip address add address=${MGMT_IP} interface=vlan1
 

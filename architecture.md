@@ -113,9 +113,8 @@ All 8 ports have disabled eBGP connections pre-configured with the local link-lo
 
 The deploy script runs two phases:
 
-1. **Phase 1 (base.rsc):** Creates bridge, VLANs, port isolation, MTU, management IP, DHCP client, IPv6 ND, L3HW offloading
-2. **Phase 1.5 (discovery):** Queries the switch for its link-local address on vlan101 (derived from bridge MAC, same on all VLAN interfaces)
-3. **Phase 2 (bgp.rsc):** Creates BGP instance, template, BFD config, and 8 disabled peer connections with the discovered link-local address
+1. **Phase 1 (base.rsc):** Bridge, VLANs, port isolation, MTU, ND prefixes, management IP, DHCP client, MSS clamping, L3HW offloading
+2. **Phase 2 (bgp.rsc):** BGP instance, template, BFD config, 8 disabled unnumbered peer connections
 
 ### Activating the Inter-Switch Link
 
@@ -156,13 +155,15 @@ On sw2:
 home-network/
 ├── architecture.md              # This file -- shared design documentation
 ├── devices/
-│   ├── sw1.env                  # Device variables: DEVICE_NAME, MGMT_IP, AS, ROUTER_ID
-│   └── sw2.env
+│   ├── sw1.env                  # Switch: DEVICE_NAME, MGMT_IP, AS, ROUTER_ID
+│   ├── sw2.env
+│   └── orangepi5-plus.env       # FRR peer: AS, PEER_INTERFACE, ANNOUNCED_PREFIX
 ├── templates/
-│   ├── base.rsc                 # L2/L3 config template (envsubst)
-│   └── bgp.rsc                  # BGP config template (envsubst)
+│   ├── base.rsc                 # Switch L2/L3 config (envsubst)
+│   ├── bgp.rsc                  # Switch BGP config (envsubst)
+│   └── frr.conf                 # FRR peer config (envsubst)
 ├── peers/
 │   └── frr.md                   # Guide: connecting FRR peers to the switches
-├── deploy.sh                    # One-shot deployment script
+├── deploy.sh                    # One-shot switch deployment script
 └── init-switch.sh               # SSH key bootstrap (takes IP as $1)
 ```

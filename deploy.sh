@@ -38,26 +38,9 @@ $SCP "$RENDERED" "${HOST}:base.rsc"
 $SSH "$HOST" '/import file-name=base.rsc' || true
 sleep 3
 
-# --- Phase 1.5: Discover link-local address ---
-echo "--- Discovering link-local address ---"
-for attempt in 1 2 3; do
-    RAW=$($SSH "$HOST" ':put [/ipv6 address get [find interface=vlan101 link-local] address]' 2>/dev/null) && break
-    echo "  attempt ${attempt}/3..."
-    sleep 3
-done
-
-export LINK_LOCAL
-LINK_LOCAL=$(echo "$RAW" | tr -d '\r' | sed 's|/.*||')
-
-if [[ -z "$LINK_LOCAL" ]]; then
-    echo "Error: could not discover link-local on vlan101" >&2
-    exit 1
-fi
-echo "  LINK_LOCAL=${LINK_LOCAL}"
-
 # --- Phase 2: BGP config ---
 echo "--- Phase 2: bgp.rsc ---"
-envsubst '${AS} ${ROUTER_ID} ${LINK_LOCAL}' < "$SCRIPT_DIR/templates/bgp.rsc" > "$RENDERED"
+envsubst '${AS} ${ROUTER_ID}' < "$SCRIPT_DIR/templates/bgp.rsc" > "$RENDERED"
 $SCP "$RENDERED" "${HOST}:bgp.rsc"
 $SSH "$HOST" '/import file-name=bgp.rsc'
 
