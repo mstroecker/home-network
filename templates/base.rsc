@@ -76,7 +76,7 @@
 # --- IPv6: accept RAs even with forwarding enabled (for SLAAC from upstream) ---
 /ipv6 settings set accept-router-advertisements=yes
 
-# --- Management IP on vlan1 (not on bridge — see architecture.md) ---
+# --- Management IP on vlan1 (not on bridge — see docs/architecture.md) ---
 /ip address add address=${MGMT_IP} interface=vlan1
 
 # --- DHCP client for upstream connectivity ---

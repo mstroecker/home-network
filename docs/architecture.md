@@ -109,11 +109,13 @@ How this affects each advertisement mechanism:
 - **`output.redistribute`** — connected routes use ENHE correctly. Static/DHCP routes leak their IPv4 gateway as the next-hop. The default route (`0.0.0.0/0`) is never redistributed at all regardless of route type.
 - **`output.default-originate`** — sends `0.0.0.0/0` with the switch's IPv4 gateway (e.g. `192.168.178.1`) instead of ENHE. Output filter chains do not apply to default-originate routes.
 
-**Workaround:** peers configure a static default route via the switch's link-local address in systemd-networkd (see `peers/frr.md`). This requires two additional pieces on the switch:
+**Workaround:** peers configure a static default route via the switch's link-local address in systemd-networkd (see `docs/peer-frr.md`). This requires two additional pieces on the switch:
 
 1. **Masquerade NAT** on vlan1 — the upstream router (Fritz!Box) does not know how to route peer prefixes (e.g. `10.65.10.0/24`) back. The switch masquerades outbound traffic so the Fritz!Box sees it from the switch's own DHCP address.
 
 2. **Static default route with `suppress-hw-offload`** — L3 HW offloading forwards packets entirely in the switch chip, bypassing the CPU where NAT rules are processed. A duplicate static default route with `suppress-hw-offload=yes` forces internet-bound traffic through the CPU. This only affects traffic matching the default route; peer-to-peer traffic uses more specific BGP routes and remains hardware-offloaded.
+
+   **Note:** The DHCP client's default route IS HW-offloaded when it's the only default route. Adding the `suppress-hw-offload` static route causes both routes to form an ECMP pair and pulls the DHCP route out of hardware — the `H` flag disappears from both. Without the static route, the DHCP route is HW-offloaded and NAT is bypassed. Verified on CRS310 with RouterOS 7.22.
 
 ```
 /ip firewall nat add chain=srcnat out-interface=vlan1 action=masquerade
@@ -132,34 +134,38 @@ RouterOS defaults to `accept-router-advertisements=yes-if-forwarding-disabled`. 
 /ipv6 settings set accept-router-advertisements=yes
 ```
 
-This is set manually (not in base.rsc) and allows the switch to get a global IPv6 address and default route from the upstream router (Fritz!Box) on vlan1. Full IPv6 internet for peers requires DHCPv6-PD to delegate prefixes to the peering VLANs — not yet implemented.
+This is set in base.rsc and allows the switch to get a global IPv6 address and default route from the upstream router (Fritz!Box) on vlan1. Full IPv6 internet for peers requires DHCPv6-PD to delegate prefixes to the peering VLANs — not yet implemented.
 
 ### Peer Connections
 
-All 8 ports have disabled eBGP connections pre-configured with the local link-local address bound to their VLAN interface and `output.network=bgp-networks` for route advertisement. To activate a peer:
+All 8 ports have disabled unnumbered eBGP connections pre-configured with `local.address` set to the VLAN interface name and `output.network=bgp-networks` for route advertisement. To activate a peer:
 
 ```
-/routing bgp connection set peer-ether1 remote.address=<remote-ll>%vlan101 remote.as=<peer-asn>
 /routing bgp connection enable peer-ether1
 ```
+
+In unnumbered mode, the switch auto-discovers the peer's link-local via IPv6 ND and accepts the remote AS from the BGP OPEN message. No `remote.address` or `remote.as` configuration needed.
 
 ## Deployment
 
 ### Prerequisites
 
-1. Fresh CRS310 with factory default config
-2. SSH key bootstrapped: `./init-switch.sh <switch-ip>`
+1. SSH key bootstrapped on a fresh switch: `./init-switch.sh <switch-ip>`
 
 ### One-Shot Deploy
 
 ```bash
-./deploy.sh devices/sw2.env
+./deploy.sh devices/sw2.env              # re-deploy (connects to ROUTER_ID)
+./deploy.sh devices/sw2.env 192.168.88.1 # after manual reset (connects to given IP)
 ```
 
-The deploy script runs two phases:
+The deploy script resets the switch to factory defaults (`/system reset-configuration`) and applies all config via `run-after-reset`. This makes it idempotent — safe to re-run at any time. The SSH key is re-imported automatically.
 
-1. **Phase 1 (base.rsc):** Bridge, VLANs, port isolation, MTU, ND prefixes, management IP, DHCP client, MSS clamping, L3HW offloading
-2. **Phase 2 (bgp.rsc):** BGP instance, template, BFD config, 8 disabled unnumbered peer connections
+Three config phases run after reset:
+
+1. **base.rsc:** Bridge, VLANs, port isolation, MTU, ND prefixes, management IP, DHCP client, MSS clamping, L3HW offloading
+2. **bgp.rsc:** BGP instance, template, BFD config, 8 disabled unnumbered peer connections
+3. **upstream.rsc:** Masquerade NAT and CPU-processed default route for peer internet access
 
 ### Activating the Inter-Switch Link
 
@@ -167,13 +173,11 @@ After both switches are deployed, activate the sfp-sfpplus1 / vlan107 peering:
 
 On sw1:
 ```
-/routing bgp connection set peer-sfp1 remote.address=<sw2-ll>%vlan107 remote.as=65002
 /routing bgp connection enable peer-sfp1
 ```
 
 On sw2:
 ```
-/routing bgp connection set peer-sfp1 remote.address=<sw1-ll>%vlan107 remote.as=65001
 /routing bgp connection enable peer-sfp1
 ```
 
@@ -192,23 +196,28 @@ On sw2:
 - **VLAN filtering order matters.** Always configure PVIDs and VLAN table entries before enabling `vlan-filtering=yes` on the bridge. Enabling it first drops all traffic that doesn't match the (empty) VLAN table, locking you out.
 - **Management access** depends on VLAN 1 including ether7/ether8 in the bridge VLAN table. If VLAN 1 is removed or misconfigured, management access is lost.
 - **DHCP client** is configured on `vlan1` (not the bridge directly) and receives an upstream IP from the upstream router. This provides internet access and DNS to the switch.
-- **IPv6 ND** is enabled with DNS advertisement (`advertise-dns=yes`).
+- **IPv6 ND** is configured with `prefix=none` on peering VLANs for unnumbered BGP peer discovery.
 
 ## Project Structure
 
 ```
 home-network/
-├── architecture.md              # This file -- shared design documentation
+├── docs/
+│   ├── architecture.md          # This file -- shared design documentation
+│   ├── peer-frr.md              # Guide: connecting FRR peers to the switches
+│   └── mikrotik-quirks.md       # Mikrotik-specific behaviors and pitfalls
 ├── devices/
-│   ├── sw1.env                  # Switch: DEVICE_NAME, MGMT_IP, AS, ROUTER_ID
+│   ├── sw1.env                  # Switch: DEVICE_NAME, MGMT_IP, AS, ROUTER_ID, UPSTREAM_GW
 │   ├── sw2.env
-│   └── orangepi5-plus.env       # FRR peer: AS, PEER_INTERFACE, ANNOUNCED_PREFIX
+│   └── orangepi5-plus.env       # FRR peer: AS, PEER_INTERFACE, ANNOUNCED_PREFIX, GATEWAY_LL
 ├── templates/
 │   ├── base.rsc                 # Switch L2/L3 config (envsubst)
 │   ├── bgp.rsc                  # Switch BGP config (envsubst)
-│   └── frr.conf                 # FRR peer config (envsubst)
-├── peers/
-│   └── frr.md                   # Guide: connecting FRR peers to the switches
-├── deploy.sh                    # One-shot switch deployment script
+│   ├── upstream.rsc             # Switch NAT + default route (envsubst)
+│   ├── frr.conf                 # FRR routing config (envsubst)
+│   ├── peering.network          # Peer systemd-networkd: interface + default route
+│   ├── dummy.netdev             # Peer systemd-networkd: dummy interface
+│   └── dummy.network            # Peer systemd-networkd: announced prefix
+├── deploy.sh                    # Idempotent deploy for switches and peers
 └── init-switch.sh               # SSH key bootstrap (takes IP as $1)
 ```

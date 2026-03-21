@@ -112,7 +112,7 @@ Both sides must have BFD enabled for sessions to establish. Without `neighbor <i
 
 ## Internet Access
 
-RouterOS cannot advertise a usable IPv4 default route via BGP with ENHE (see `architecture.md`). Instead, configure the peer's network interface with a static default route via the switch's link-local address and public DNS.
+RouterOS cannot advertise a usable IPv4 default route via BGP with ENHE (see `docs/architecture.md`). Instead, configure the peer's network interface with a static default route via the switch's link-local address and public DNS.
 
 ### systemd-networkd Configuration
 
@@ -150,7 +150,7 @@ sudo systemctl restart systemd-networkd
 
 ### Switch-Side Requirements
 
-The switch needs a masquerade NAT rule and a CPU-processed default route (see `architecture.md` for details):
+The switch needs a masquerade NAT rule and a CPU-processed default route (see `docs/architecture.md` for details):
 
 ```
 /ip firewall nat add chain=srcnat out-interface=vlan1 action=masquerade
