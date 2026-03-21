@@ -75,6 +75,14 @@ Then add `network 10.65.10.0/24` under `address-family ipv4 unicast` in the FRR 
 
 The switch receives the route with an IPv6 link-local next-hop via ENHE and installs it as a hardware-offloaded BGP route.
 
+## Route Advertisement
+
+The switch advertises its management subnet to peers via the `bgp-networks` address list (configured in bgp.rsc). This gives peers a route back to the switch and the management network. The FRR peer receives this automatically — verify with:
+
+```bash
+sudo vtysh -c "show bgp ipv4 unicast"
+```
+
 ## Verification
 
 On the server:
@@ -101,3 +109,55 @@ neighbor <interface> bfd
 ```
 
 Both sides must have BFD enabled for sessions to establish. Without `neighbor <iface> bfd` on the FRR side, the switch sends BFD packets but never receives replies, and BGP flaps.
+
+## Internet Access
+
+RouterOS cannot advertise a usable IPv4 default route via BGP with ENHE (see `architecture.md`). Instead, configure the peer's network interface with a static default route via the switch's link-local address and public DNS.
+
+### systemd-networkd Configuration
+
+Create a networkd config that overrides the default netplan DHCP config. The filename must sort before the netplan-generated file in `/run/systemd/network/`.
+
+```ini
+# /etc/systemd/network/05-peering.network
+[Match]
+Name=enP3p49s0
+
+[Network]
+DHCP=no
+LinkLocalAddressing=ipv6
+DNS=1.1.1.1
+DNS=1.0.0.1
+Domains=~.
+
+[Route]
+Destination=0.0.0.0/0
+Gateway=<switch-link-local>
+GatewayOnLink=true
+
+[IPv6AcceptRA]
+UseGateway=false
+UseDNS=false
+```
+
+Replace `<switch-link-local>` with the switch's link-local address on the peering VLAN (find it with `/ipv6 address print where interface=vlanNNN` on the switch).
+
+Apply:
+
+```bash
+sudo systemctl restart systemd-networkd
+```
+
+### Switch-Side Requirements
+
+The switch needs a masquerade NAT rule and a CPU-processed default route (see `architecture.md` for details):
+
+```
+/ip firewall nat add chain=srcnat out-interface=vlan1 action=masquerade
+/ip route add dst-address=0.0.0.0/0 gateway=192.168.178.1 distance=1 suppress-hw-offload=yes comment=internet-via-cpu
+```
+
+### Limitations
+
+- **No Fritz!Box DNS:** the upstream router's subnet (`192.168.178.0/24`) is unreachable from peers because it matches a HW-offloaded connected route on the switch (no NAT). Use public DNS instead.
+- **No global IPv6:** peers only have IPv6 link-local on the peering interface. IPv6 internet requires DHCPv6-PD from the upstream router — not yet implemented.

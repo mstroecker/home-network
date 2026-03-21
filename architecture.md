@@ -89,9 +89,54 @@ Key syntax notes for RouterOS 7.22:
 
 BFD is **enabled** on the BGP template (`use-bfd=yes`) with 1s timers and multiplier 3 (3s detection time). Both sides must have BFD enabled — on RouterOS via the template, and on FRR via `neighbor <iface> bfd` in the BGP config.
 
+### Route Advertisement
+
+RouterOS 7 uses firewall address lists instead of BGP network statements. The management subnet is added to a `bgp-networks` address list, and each peer connection references it via `output.network=bgp-networks`. This ensures peers receive a route back to the switch's management network.
+
+`output.network` is the only mechanism that correctly uses ENHE (IPv6 next-hop) for IPv4 prefixes. Routes advertised this way are resolved by the peer using the BGP session's link-local next-hop. See "RouterOS ENHE Bug" below for limitations of other mechanisms.
+
+### Internet Access for Peers
+
+RouterOS cannot advertise a usable IPv4 default route to peers via BGP due to ENHE limitations.
+
+#### RouterOS ENHE Bug: IPv4 next-hop leaks on redistributed routes
+
+When RouterOS redistributes a route that has an explicit IPv4 gateway (static, DHCP), it sends the original IPv4 gateway as the BGP next-hop instead of using ENHE (the local IPv6 link-local). Connected routes are unaffected — they have no IPv4 gateway to leak, so ENHE works correctly. Neither `nexthop-choice=force-self` nor output routing filters can override this behavior.
+
+How this affects each advertisement mechanism:
+
+- **`output.network`** (address list) — works correctly with ENHE for all prefixes. However, `0.0.0.0/0` in the address list is treated as a wildcard (match all), not as the default prefix, so the default route cannot be advertised this way.
+- **`output.redistribute`** — connected routes use ENHE correctly. Static/DHCP routes leak their IPv4 gateway as the next-hop. The default route (`0.0.0.0/0`) is never redistributed at all regardless of route type.
+- **`output.default-originate`** — sends `0.0.0.0/0` with the switch's IPv4 gateway (e.g. `192.168.178.1`) instead of ENHE. Output filter chains do not apply to default-originate routes.
+
+**Workaround:** peers configure a static default route via the switch's link-local address in systemd-networkd (see `peers/frr.md`). This requires two additional pieces on the switch:
+
+1. **Masquerade NAT** on vlan1 — the upstream router (Fritz!Box) does not know how to route peer prefixes (e.g. `10.65.10.0/24`) back. The switch masquerades outbound traffic so the Fritz!Box sees it from the switch's own DHCP address.
+
+2. **Static default route with `suppress-hw-offload`** — L3 HW offloading forwards packets entirely in the switch chip, bypassing the CPU where NAT rules are processed. A duplicate static default route with `suppress-hw-offload=yes` forces internet-bound traffic through the CPU. This only affects traffic matching the default route; peer-to-peer traffic uses more specific BGP routes and remains hardware-offloaded.
+
+```
+/ip firewall nat add chain=srcnat out-interface=vlan1 action=masquerade
+/ip route add dst-address=0.0.0.0/0 gateway=192.168.178.1 distance=1 suppress-hw-offload=yes comment=internet-via-cpu
+```
+
+**Limitation:** the upstream router's subnet (e.g. `192.168.178.0/24`) is unreachable from peers because it matches a connected route on the switch (HW-offloaded, no NAT). Peers must use public DNS (e.g. Cloudflare `1.1.1.1`) instead of the Fritz!Box DNS.
+
+IPv6 internet for peers requires DHCPv6-PD to delegate global prefixes to the peering VLANs — not yet implemented.
+
+### IPv6 Upstream
+
+RouterOS defaults to `accept-router-advertisements=yes-if-forwarding-disabled`. Since the switches have `forward=yes` (required for routing), they ignore RAs from the upstream router and do not obtain a global IPv6 address via SLAAC. To fix this:
+
+```
+/ipv6 settings set accept-router-advertisements=yes
+```
+
+This is set manually (not in base.rsc) and allows the switch to get a global IPv6 address and default route from the upstream router (Fritz!Box) on vlan1. Full IPv6 internet for peers requires DHCPv6-PD to delegate prefixes to the peering VLANs — not yet implemented.
+
 ### Peer Connections
 
-All 8 ports have disabled eBGP connections pre-configured with the local link-local address bound to their VLAN interface. To activate a peer:
+All 8 ports have disabled eBGP connections pre-configured with the local link-local address bound to their VLAN interface and `output.network=bgp-networks` for route advertisement. To activate a peer:
 
 ```
 /routing bgp connection set peer-ether1 remote.address=<remote-ll>%vlan101 remote.as=<peer-asn>

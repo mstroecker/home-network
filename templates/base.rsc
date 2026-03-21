@@ -73,6 +73,9 @@
 /ipv6 nd prefix add prefix=none interface=vlan107
 /ipv6 nd prefix add prefix=none interface=vlan108
 
+# --- IPv6: accept RAs even with forwarding enabled (for SLAAC from upstream) ---
+/ipv6 settings set accept-router-advertisements=yes
+
 # --- Management IP on vlan1 (not on bridge — see architecture.md) ---
 /ip address add address=${MGMT_IP} interface=vlan1
 
