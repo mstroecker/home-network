@@ -52,10 +52,10 @@ interface, left untouched.
 1. **containerlab** + Docker installed.
 2. **RouterOS CHR image** — built once via the helper in [`mikrotik-vm/`](mikrotik-vm/):
    ```bash
-   cd mikrotik-vm && make build      # -> vrnetlab/mikrotik_routeros:7.23.1
+   cd mikrotik-vm && make build      # -> vrnetlab/mikrotik_routeros:7.22
    ```
-   (`make build VERSION=7.22` to match the production switches instead; if you
-   change it, update the `image:` line in `home-network.clab.yml`.)
+   Builds 7.22 (matches the production hardware). Don't bump to 7.23.1+ — it
+   hangs at the serial login under vrnetlab; see `mikrotik-vm/README.md`.
 3. FRR + Alpine images are pulled automatically.
 
 ## Run

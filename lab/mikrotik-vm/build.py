@@ -26,7 +26,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 VRNETLAB_REPO = "https://github.com/hellt/vrnetlab.git"
 DOWNLOAD_URL = "https://download.mikrotik.com/routeros/{v}/chr-{v}.vmdk.zip"
-DEFAULT_VERSION = "7.23.1"
+DEFAULT_VERSION = "7.22"  # 7.23.1+ hangs at the serial login under vrnetlab (see README)
 
 
 def run(cmd, cwd=None):

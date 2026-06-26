@@ -3,7 +3,7 @@
 #
 # Override the version on the command line:  make build VERSION=7.22
 
-VERSION ?= 7.23.1
+VERSION ?= 7.22
 IMAGE   := vrnetlab/mikrotik_routeros:$(VERSION)
 PY      := python3
 
