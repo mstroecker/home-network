@@ -1,0 +1,102 @@
+name: home-network
+
+# Management network — fixes the subnet so the switches' UI IPs are stable.
+mgmt:
+  network: clab-home-network
+  ipv4-subnet: 172.20.20.0/24
+
+# Lab mirror of the production CRS310 / FRR topology.
+# Each FRR node is dual-homed: it peers with BOTH switches.
+#
+#      ┌──────── sw1 ══(eBGP inter-switch)══ sw2 ────────┐
+#      │        ╱  │                          │  ╲        │
+#   (eBGP)    ╱  (eBGP)                    (eBGP) ╲    (eBGP)
+#      │    ╱      │                          │     ╲     │
+#     frr1 ────────┘                          └──────── frr2
+#      │                                                 │
+#      └ both switches uplink ── fritzbox ── to the box ─┘
+#                              (DHCP + NAT = "internet")
+#
+# NOTE on interface mapping (vrnetlab quirk):
+#   For mikrotik_ros, RouterOS `ether1` is the MANAGEMENT port. containerlab's
+#   data interfaces are therefore offset by one:
+#       clab  sw:eth1  ->  RouterOS ether2   (frr1)
+#       clab  sw:eth2  ->  RouterOS ether3   (frr2)
+#       clab  sw:eth3  ->  RouterOS ether4   (other switch)
+#       clab  sw:eth4  ->  RouterOS ether5   (fritzbox uplink)
+#   The startup .rsc files configure ether2..5 accordingly. After boot, verify
+#   with `/interface ethernet print` on the switch.
+
+topology:
+  kinds:
+    mikrotik_ros:
+      # No pull-able MikroTik image — build it first: `cd mikrotik-vm && make build`.
+      # 7.22 stable: matches the production hardware and boots cleanly under
+      # vrnetlab (7.23.1 hangs at the serial login prompt during bootstrap).
+      image: vrnetlab/mikrotik_routeros:7.22
+    linux:
+      image: alpine:3.20
+
+  nodes:
+    sw1:
+      kind: mikrotik_ros
+      startup-config: configs/sw1.rsc
+      mgmt-ipv4: 172.20.20.11           # stable mgmt IP for the UI
+      # The container DNATs all ports to RouterOS, so publishing maps the host
+      # port straight to WebFig / Winbox. Browse http://localhost:8081
+      ports:
+        - "8081:80"                     # WebFig (HTTP)
+        - "8441:443"                    # WebFig (HTTPS)
+        - "8291:8291"                   # Winbox / WinBox app
+    sw2:
+      kind: mikrotik_ros
+      startup-config: configs/sw2.rsc
+      mgmt-ipv4: 172.20.20.12
+      ports:
+        - "8082:80"                     # WebFig (HTTP)  -> http://localhost:8082
+        - "8442:443"                    # WebFig (HTTPS)
+        - "8292:8291"                   # Winbox
+
+    frr1:
+      kind: linux
+      image: quay.io/frrouting/frr:10.3.0
+      binds:
+        - configs/frr1/frr.conf:/etc/frr/frr.conf
+        - configs/frr/daemons:/etc/frr/daemons
+      exec:
+        # Announced prefix must exist in the kernel RIB for `network` to take effect.
+        - ip link add lo10 type dummy
+        - ip link set lo10 up
+        - ip addr add 10.65.10.1/24 dev lo10
+    frr2:
+      kind: linux
+      image: quay.io/frrouting/frr:10.3.0
+      binds:
+        - configs/frr2/frr.conf:/etc/frr/frr.conf
+        - configs/frr/daemons:/etc/frr/daemons
+      exec:
+        - ip link add lo10 type dummy
+        - ip link set lo10 up
+        - ip addr add 10.65.20.1/24 dev lo10
+
+    fritzbox:
+      kind: linux
+      image: alpine:3.20
+      cmd: sleep infinity
+      binds:
+        - fritzbox/setup.sh:/setup.sh:ro
+      exec:
+        - sh /setup.sh
+
+  links:
+    # frr1 dual-homed: eth1 -> sw1 ether2, eth2 -> sw2 ether2
+    - endpoints: ["frr1:eth1", "sw1:eth1"]
+    - endpoints: ["frr1:eth2", "sw2:eth1"]
+    # frr2 dual-homed: eth1 -> sw1 ether3, eth2 -> sw2 ether3
+    - endpoints: ["frr2:eth1", "sw1:eth2"]
+    - endpoints: ["frr2:eth2", "sw2:eth2"]
+    # Inter-switch eBGP link (RouterOS ether4 on both)
+    - endpoints: ["sw1:eth3", "sw2:eth3"]
+    # Uplinks to the Fritz!Box (RouterOS ether5 -> fritzbox eth1/eth2)
+    - endpoints: ["sw1:eth4", "fritzbox:eth1"]
+    - endpoints: ["sw2:eth4", "fritzbox:eth2"]

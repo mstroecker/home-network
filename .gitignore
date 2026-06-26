@@ -1,0 +1,26 @@
+# --- containerlab runtime artifacts ---
+# Generated on `clab deploy`: per-node configs, ansible inventory,
+# topology-data.json, authorized_keys, TLS certs. Recreated each deploy.
+lab/clab-*/
+.clab/
+*.clab.yml.bak
+.*.clab.yml.bak
+
+# --- RouterOS CHR image build (lab/mikrotik-vm) ---
+# Large binaries + cloned tooling, all regenerable via `make build`.
+lab/mikrotik-vm/vrnetlab/
+lab/mikrotik-vm/chr-*.zip
+lab/mikrotik-vm/chr-*.vmdk
+lab/mikrotik-vm/chr-*.vdi
+lab/mikrotik-vm/chr-*.img
+lab/mikrotik-vm/chr-*.qcow2
+lab/mikrotik-vm/chr-*.part
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+
+# --- Editor / OS cruft ---
+*.swp
+*~
+.DS_Store
